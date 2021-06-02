@@ -29,6 +29,7 @@ def check_synapse(zarr_file, synapse_group):
 
     find_empty_layers(zarr_file, synapse_group)
     find_non_unique_layers(zarr_file, synapse_group)
+    find_dust(zarr_file, synapse_group)
 
 
 def find_empty_layers(zarr_file, synapse_group):
@@ -62,6 +63,25 @@ def find_non_unique_layers(zarr_file, synapse_group):
     if non_unique_layers:
         print(f"{synapse_group}: non-unique IDs in layers {non_unique_layers}")
 
+
+def find_dust(zarr_file, synapse_group, max_size=10):
+    '''Check that there are no small, accidental annotations (which we call
+    "dust") that are at most `max_size` voxels big.'''
+
+    dust_layers = []
+
+    for layer_name in layer_names:
+
+        ds_name = f'{synapse_group}/{layer_name}'
+
+        layer = zarr_file[ds_name][:]
+        if has_dust(layer, max_size):
+            dust_layers.append(layer_name)
+
+    if dust_layers:
+        print(f"{synapse_group}: dust in layers {dust_layers}")
+
+
 def has_unique_connected_components(layer):
     '''This function checks whether each connected component in the given numpy
     array has a unique ID.'''
@@ -94,6 +114,13 @@ def has_unique_connected_components(layer):
             return False
 
     return True
+
+
+def has_dust(layer, max_size):
+
+    _, label_counts = np.unique(layer, return_counts=True)
+
+    return np.any(label_counts <= max_size)
 
 
 if __name__ == "__main__":
