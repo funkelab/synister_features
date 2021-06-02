@@ -6,43 +6,57 @@ import zarr
 import zlib
 
 
-def check_annotation(layer):
+dataset = '20210525'
+annotators = ['c0', 'c1', 'c2']
+max_num_chunks = 20
+layer_names = ['vesicles', 'cleft', 'cleft_membrane', 'cytosol', 'posts', 't-bars']
 
-    unique_labels = np.unique(layer, return_counts=False)
-    
-    # print(f"unique labels are {unique_labels}")
-    
-    if unique_labels.size > 1:
 
-        return True
-    
-    else:
+def has_annotations(layer):
 
-        return False
+    return np.unique(layer).size > 1
 
-    
+
+def check_chunk(zarr_file, chunk_group):
+
+    print(f"Checking annotations in {chunk_group}...")
+
+    for synapse in range(10):
+        check_synapse(zarr_file, f'{chunk_group}/{synapse}')
+
+
+def check_synapse(zarr_file, synapse_group):
+
+    find_empty_layers(zarr_file, synapse_group)
+
+
+def find_empty_layers(zarr_file, synapse_group):
+
+    empty_layers = []
+
+    for layer_name in layer_names:
+
+        ds_name = f'{synapse_group}/{layer_name}'
+
+        layer = zarr_file[ds_name][:]
+        if not has_annotations(layer):
+            empty_layers.append(layer_name)
+
+    if empty_layers:
+        print(f"{synapse_group}: no annotations in layers {empty_layers}")
+
+
 if __name__ == "__main__":
 
-    chunk_label = 'c0_0'
+    zarr_file = zarr.open(f'../data/{dataset}.zarr', 'r')
 
-    for synapse_number in range(10):
+    for annotator in annotators:
 
-        ds_path = f'/groups/funke/home/luk/synister/run/data/20210525.zarr/synapses_{chunk_label}/{synapse_number}'
+        for chunk in range(max_num_chunks):
 
-        zarr_file = zarr.open(ds_path, 'r')
+            chunk_group = f'synapses_{annotator}_{chunk}'
 
-        vesicle_layers = zarr_file['vesicles'][:]
-        cleft_layers = zarr_file['cleft'][:]
-        cleft_membrane_layers = zarr_file['cleft_membrane'][:]
-        cytosol_layers = zarr_file['cytosol'][:]
-        posts_layers = zarr_file['posts'][:]
-        t_bars_layers = zarr_file['t-bars'][:]
-       
-        all_layers = np.array([vesicle_layers, cleft_layers, cleft_membrane_layers, cytosol_layers, posts_layers, t_bars_layers])  
-        # all_layers = np.array([vesicle_layers])
+            if chunk_group not in zarr_file:
+                continue
 
-        for layer in all_layers:
-            
-            if not(check_annotation(layer)):
-
-                print(f"synapses_{chunk_label}/{synapse_number} NOT ANNOTATED")
+            check_chunk(zarr_file, chunk_group)
