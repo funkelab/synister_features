@@ -12,11 +12,6 @@ max_num_chunks = 20
 layer_names = ['vesicles', 'cleft', 'cleft_membrane', 'cytosol', 'posts', 't-bars']
 
 
-def has_annotations(layer):
-
-    return np.unique(layer).size > 1
-
-
 def check_chunk(zarr_file, chunk_group):
 
     print(f"Checking annotations in {chunk_group}...")
@@ -30,6 +25,7 @@ def check_synapse(zarr_file, synapse_group):
     find_empty_layers(zarr_file, synapse_group)
     find_non_unique_layers(zarr_file, synapse_group)
     find_dust(zarr_file, synapse_group)
+    find_excess_labels(zarr_file, synapse_group)
 
 
 def find_empty_layers(zarr_file, synapse_group):
@@ -82,6 +78,27 @@ def find_dust(zarr_file, synapse_group, max_size=10):
         print(f"{synapse_group}: dust in layers {dust_layers}")
 
 
+def find_excess_labels(zarr_file, synapse_group):
+
+    excess_layers = []
+
+    for layer_name in ['cleft', 'cleft_membrane', 'cytosol', 't-bars']:
+
+        ds_name = f'{synapse_group}/{layer_name}'
+
+        layer = zarr_file[ds_name][:]
+        num_labels = count_labels(layer)
+        if num_labels is None:
+            print(f"{synapse_group}: no 0 label in layer {layer_name}!")
+            continue
+
+        if num_labels > 1:
+            excess_layers.append(layer_name)
+
+    if excess_layers:
+        print(f"{synapse_group}: more than one label in layers {excess_layers}")
+
+
 def has_unique_connected_components(layer):
     '''This function checks whether each connected component in the given numpy
     array has a unique ID.'''
@@ -121,6 +138,22 @@ def has_dust(layer, max_size):
     _, label_counts = np.unique(layer, return_counts=True)
 
     return np.any(label_counts <= max_size)
+
+
+def count_labels(layer):
+
+    labels = np.unique(layer)
+
+    if 0 not in labels:
+        print(f"array {labels} does not contain 0")
+        return None
+
+    return labels.size - 1
+
+
+def has_annotations(layer):
+
+    return np.unique(layer).size > 1
 
 
 if __name__ == "__main__":
