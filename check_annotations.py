@@ -1,9 +1,6 @@
-import os
-import skimage.io
 import numpy as np
 import skimage.measure
 import zarr
-import zlib
 
 
 dataset = '20210525'
