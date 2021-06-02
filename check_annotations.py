@@ -7,9 +7,12 @@ import zlib
 
 
 dataset = '20210525'
+original_dataset = '../data/source_data'
 annotators = ['c0', 'c1', 'c2']
 max_num_chunks = 20
 layer_names = ['vesicles', 'cleft', 'cleft_membrane', 'cytosol', 'posts', 't-bars']
+
+background_width = 50  # the space between individual synapses in the source data
 
 
 def check_chunk(zarr_file, chunk_group):
@@ -26,6 +29,7 @@ def check_synapse(zarr_file, synapse_group):
     find_non_unique_layers(zarr_file, synapse_group)
     find_dust(zarr_file, synapse_group)
     find_excess_labels(zarr_file, synapse_group)
+    compare_intensities(zarr_file, synapse_group)
 
 
 def find_empty_layers(zarr_file, synapse_group):
@@ -97,6 +101,37 @@ def find_excess_labels(zarr_file, synapse_group):
 
     if excess_layers:
         print(f"{synapse_group}: more than one label in layers {excess_layers}")
+
+
+def compare_intensities(zarr_file, synapse_group):
+
+    # synapse_group: synapses_c0_0/0
+    #   split into: chunk_group / synapse_number
+
+    chunk_group, synapse = synapse_group.split('/')
+    synapse = int(synapse)
+
+    raw = zarr_file[f'{synapse_group}/raw'][:]
+
+    # find the correct chunk in source data
+    chunk_filename = f'{original_dataset}/{chunk_group}.zarr'
+    source_chunk_raw = zarr.open(chunk_filename, 'r')['raw']
+
+    # cut out the relevant part for our synapse
+
+    layer_width = source_chunk_raw.shape[2]
+    synapse_width = (layer_width - (11 * background_width))//10
+    start_x = background_width + synapse * (synapse_width + background_width)
+    end_x = start_x + synapse_width
+
+    source_raw = source_chunk_raw[:,:,start_x:end_x]
+
+    # compare that they are equal
+
+    is_equal = np.all(raw == source_raw)
+
+    if not is_equal:
+        print(f"{synapse_group}: raw data does not match source data")
 
 
 def has_unique_connected_components(layer):
