@@ -2,9 +2,9 @@ import numpy as np
 import skimage.measure
 import zarr
 import json
+from skimage.morphology import flood
 
-
-dataset = '20210525'
+dataset = '20210602'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
 annotators = ['c0', 'c1', 'c2']
@@ -39,13 +39,17 @@ def process_synapse(zarr_file, synapse_group, synapse):
 
     synapse_id = get_synapse_id(annotator, chunk_number, synapse)
     neurotransmitter = get_neurotransmitter(synapse_id)
+    average_intensities = get_average_intensities(zarr_file, synapse_group)
+    post_account = get_post_account(zarr_file, synapse_group)
 
     synapse_stats = {
         'annotator': annotator,
         'chunk_number': chunk_number,
         'synapse_number': synapse,
         'synapse_id': synapse_id,
-        'neurotransmitter': neurotransmitter
+        'neurotransmitter': neurotransmitter,
+        'average_intensities': average_intensities,
+        'post_account': post_account
     }
 
     # get synapse statistics
@@ -92,6 +96,32 @@ def extract_vesicle_sizes(zarr_file, synapse_group):
         'vesicle_sizes': vesicle_sizes
     }
 
+def get_average_intensities(zarr_file, synapse_group):
+
+    layer_names = ['cleft', 'cleft_membrane', 'cytosol', 't-bars']
+    average_intensities = {}
+
+    for layer in layer_names:
+
+        # get raw intensities and annotated regions
+        raw = zarr_file[f'{synapse_group}/raw'][:]
+        # create a mask for the background region
+        mask = flood(zarr_file[f'{synapse_group}/{layer}'][:], (0,0,0), tolerance=0)
+
+        # set the intensities of the backgournd region to be zero
+        raw[mask] = 0
+        average_intensities.update({f'{layer}_average_intensities' : np.average(raw[raw!=0])})
+
+    print(f"{average_intensities}")
+
+    return average_intensities
+
+def get_post_account(zarr_file, synapse_group):
+
+    layer = zarr_file[f'{synapse_group}/posts'][:]
+    unique_labels, label_counts = np.unique(layer, return_counts=True)
+    print(f"post account {len(label_counts) - 1}")
+    return len(label_counts) - 1
 
 if __name__ == "__main__":
 
