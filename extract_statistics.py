@@ -2,9 +2,8 @@ import numpy as np
 import skimage.measure
 import zarr
 import json
-from skimage.morphology import flood
 
-dataset = '20210602'
+dataset = '20210609'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
 annotators = ['c0', 'c1', 'c2']
@@ -12,7 +11,6 @@ max_num_chunks = 20
 
 file_to_ids = None
 ids_to_nt = None
-
 
 def process_chunk(zarr_file, chunk_group):
 
@@ -23,7 +21,6 @@ def process_chunk(zarr_file, chunk_group):
         chunk_stats.append(synapse_stats)
 
     return chunk_stats
-
 
 def process_synapse(zarr_file, synapse_group, synapse):
 
@@ -39,8 +36,9 @@ def process_synapse(zarr_file, synapse_group, synapse):
 
     synapse_id = get_synapse_id(annotator, chunk_number, synapse)
     neurotransmitter = get_neurotransmitter(synapse_id)
-    average_intensities = get_average_intensities(zarr_file, synapse_group)
-    post_account = get_post_account(zarr_file, synapse_group)
+    mean_intensities = get_mean_intensities(zarr_file, synapse_group)
+    median_intensities = get_median_intensities(zarr_file, synapse_group)
+    post_count = get_post_count(zarr_file, synapse_group)
 
     synapse_stats = {
         'annotator': annotator,
@@ -48,16 +46,21 @@ def process_synapse(zarr_file, synapse_group, synapse):
         'synapse_number': synapse,
         'synapse_id': synapse_id,
         'neurotransmitter': neurotransmitter,
-        'average_intensities': average_intensities,
-        'post_account': post_account
+        'cleft_mean_intensity': mean_intensities['cleft'],
+        'cleft_membrane_mean_intensity': mean_intensities['cleft_membrane'],
+        't-bars_mean_intensity': mean_intensities['t-bars'],
+        'cytosol_mean_intensity': mean_intensities['cytosol'],
+        'cleft_median_intensity': median_intensities['cleft'],
+        'cleft_membrane_median_intensity': median_intensities['cleft_membrane'],
+        't-bars_median_intensity': median_intensities['t-bars'],
+        'cytosol_median_intensity': median_intensities['cytosol'],
+        'post_count': post_count
     }
 
     # get synapse statistics
-
     synapse_stats.update(extract_vesicle_sizes(zarr_file, synapse_group))
 
     return synapse_stats
-
 
 def get_synapse_id(annotator, chunk_number, synapse_number):
 
@@ -96,31 +99,91 @@ def extract_vesicle_sizes(zarr_file, synapse_group):
         'vesicle_sizes': vesicle_sizes
     }
 
-def get_average_intensities(zarr_file, synapse_group):
+def get_mean_intensities(zarr_file, synapse_group):
 
     layer_names = ['cleft', 'cleft_membrane', 'cytosol', 't-bars']
-    average_intensities = {}
+    mean_intensities = {}
 
-    for layer in layer_names:
+    # get raw intensities and annotated regions
+    raw = zarr_file[f'{synapse_group}/raw'][:]
 
-        # get raw intensities and annotated regions
-        raw = zarr_file[f'{synapse_group}/raw'][:]
-        # create a mask for the background region
-        mask = flood(zarr_file[f'{synapse_group}/{layer}'][:], (0,0,0), tolerance=0)
+    for layer_name in layer_names:
 
-        # set the intensities of the backgournd region to be zero
-        raw[mask] = 0
-        average_intensities.update({f'{layer}_average_intensities' : np.average(raw[raw!=0])})
+        layer = zarr_file[f'{synapse_group}/{layer_name}'][:]
 
-    print(f"{average_intensities}")
+        if np.sum(layer) == 0:
+            mean_intensities.update({
+                f'{layer_name}': 'skip'
+            })
 
-    return average_intensities
+        else:
+            mean_intensities.update({
+                f'{layer_name}': float(np.average(raw[layer!=0]))
+            })
 
-def get_post_account(zarr_file, synapse_group):
+    if (mean_intensities['cleft'] != 'skip') & (mean_intensities['cleft_membrane'] != 'skip'):
+
+        cleft_membrane = zarr_file[f'{synapse_group}/cleft_membrane'][:]
+        cleft = zarr_file[f'{synapse_group}/cleft'][:]
+
+        mask_cleft = cleft != 0
+        mask_cleft_membrane = cleft_membrane != 0
+
+        # this is True where membrane == True AND not cleft == True
+        mask_only_cleft_membrane = mask_cleft_membrane & ~mask_cleft
+        mean_intensities.update({
+            f'cleft_membrane' :
+            float(np.average(raw[mask_only_cleft_membrane]))
+        })
+
+    return mean_intensities
+
+def get_median_intensities(zarr_file, synapse_group):
+
+    layer_names = ['cleft',  'cleft_membrane', 'cytosol', 't-bars']
+    median_intensities = {}
+
+    # get raw intensities and annotated regions
+    raw = zarr_file[f'{synapse_group}/raw'][:]
+
+    for layer_name in layer_names:
+
+        layer = zarr_file[f'{synapse_group}/{layer_name}'][:]
+
+        median_intensities.update({
+            f'{layer_name}': float(np.median(raw[layer!=0]))
+        })
+
+        if np.sum(layer) == 0:
+            median_intensities.update({
+                f'{layer_name}': 'skip'
+            })
+        else:
+            median_intensities.update({
+                f'{layer_name}': float(np.median(raw[layer!=0]))
+            })
+    if (median_intensities['cleft'] != 'skip') & (median_intensities['cleft_membrane'] != 'skip'):
+
+        cleft_membrane = zarr_file[f'{synapse_group}/cleft_membrane'][:]
+        cleft = zarr_file[f'{synapse_group}/cleft'][:]
+
+        mask_cleft = cleft != 0
+        mask_cleft_membrane = cleft_membrane != 0
+
+        # this is True where membrane == True AND not cleft == True
+        mask_only_cleft_membrane = mask_cleft_membrane & ~mask_cleft
+        median_intensities.update({
+            f'cleft_membrane' :
+            float(np.median(raw[mask_only_cleft_membrane]))
+        })
+
+    return median_intensities
+
+def get_post_count(zarr_file, synapse_group):
 
     layer = zarr_file[f'{synapse_group}/posts'][:]
     unique_labels, label_counts = np.unique(layer, return_counts=True)
-    print(f"post account {len(label_counts) - 1}")
+    # print(f"post count {len(label_counts) - 1}")
     return len(label_counts) - 1
 
 if __name__ == "__main__":
@@ -158,5 +221,5 @@ if __name__ == "__main__":
 
             synapse_stats += process_chunk(zarr_file, chunk_group)
 
-    with open('synapse_statistics.json', 'w') as f:
+    with open(f'synapse_statistics_{dataset}.json', 'w') as f:
         json.dump(synapse_stats, f, indent=2)
