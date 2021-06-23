@@ -2,6 +2,8 @@ import numpy as np
 import skimage.measure
 import zarr
 import json
+import math
+import sys
 
 dataset = '20210609'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
@@ -59,6 +61,7 @@ def process_synapse(zarr_file, synapse_group, synapse):
 
     # get synapse statistics
     synapse_stats.update(extract_vesicle_sizes(zarr_file, synapse_group))
+    synapse_stats.update(extract_vesicle_circularities(zarr_file, synapse_group))
 
     return synapse_stats
 
@@ -98,6 +101,39 @@ def extract_vesicle_sizes(zarr_file, synapse_group):
         'num_vesicles': len(vesicle_sizes),
         'vesicle_sizes': vesicle_sizes
     }
+
+def extract_vesicle_circularities(zarr_file, synapse_group):
+
+    vesicle_circularities = []
+
+    ds_name = f"{synapse_group}/{'vesicles'}"
+    layer = zarr_file[ds_name][:]
+
+    # get the layer with annotations
+    annotated_layer = get_annotated_layer(layer)
+
+    if annotated_layer == 'skip':
+        return {'vesicle_circularities': []}
+
+    # generate a binary mask
+    unique_labels, label_counts = np.unique(annotated_layer, return_counts=True)
+    nonzero_unique_labels = unique_labels[unique_labels!=0]
+
+    for label in nonzero_unique_labels:
+
+        binary_mask = annotated_layer == label
+
+        cc_labels = skimage.measure.label(binary_mask, connectivity=1)
+        properties = skimage.measure.regionprops(cc_labels)
+        vesicle_circularity = (4 * math.pi *
+                properties[0]['area'])/(properties[0]['perimeter']**2)
+
+        print(f'vc = {vesicle_circularity}')
+        vesicle_circularities.append(vesicle_circularity)
+
+    return {
+            'vesicle_circularities': vesicle_circularities
+            }
 
 def get_mean_intensities(zarr_file, synapse_group):
 
@@ -185,6 +221,16 @@ def get_post_count(zarr_file, synapse_group):
     unique_labels, label_counts = np.unique(layer, return_counts=True)
     # print(f"post count {len(label_counts) - 1}")
     return len(label_counts) - 1
+
+def get_annotated_layer(layer):
+
+    for z in range(29):
+        if np.sum(layer[z,:,:])!=0:
+            print(f'annotated layer is z = {z}')
+            return layer[z,:,:].reshape(-1, layer[z,:,:].shape[-1])
+
+    # no annotation found in all layers
+    return 'skip'
 
 if __name__ == "__main__":
 
