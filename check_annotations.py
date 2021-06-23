@@ -2,8 +2,7 @@ import numpy as np
 import skimage.measure
 import zarr
 
-
-dataset = '20210602'
+dataset = '20210609'
 original_dataset = '../data/source_data'
 annotators = ['c0', 'c1', 'c2']
 max_num_chunks = 20
