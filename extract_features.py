@@ -1,163 +1,282 @@
 import numpy as np
+import skimage.measure
+import zarr
 import json
-import copy
+import math
+import sys
+import random
 
 dataset = '20210609'
+file_to_ids_json = "../data/source_data/file_to_ids.json"
+ids_to_nt_json = "../data/source_data/ids_to_nt.json"
+annotators = ['c0', 'c1', 'c2']
+max_num_chunks = 20
 
-def get_skipped_synapses(statistics):
+file_to_ids = None
+ids_to_nt = None
 
-    skipped_synapses = []
-    feature_names = ['cleft_mean_intensity', 'cleft_membrane_mean_intensity',
-    't-bars_mean_intensity', 'cytosol_mean_intensity',
-    'cleft_median_intensity', 'cleft_membrane_median_intensity',
-    't-bars_median_intensity','cytosol_median_intensity', 'post_count',
-    'num_vesicles', 'vesicle_sizes', 'vesicle_circularities']
+def process_chunk(zarr_file, chunk_group):
 
-    for synapse in statistics:
+    chunk_stats = []
 
-        for feature_name in list(synapse.keys())[5:]:
+    for synapse in range(10):
+        synapse_features = process_synapse(zarr_file, f'{chunk_group}/{synapse}', synapse)
+        chunk_stats.append(synapse_features)
 
-            if feature_name.split('_')[-1] == 'intensity':
-                if synapse[feature_name]!='skip': break
+    return chunk_stats
 
-            elif feature_name in ['post_count', 'num_vesicles']:
-                if synapse[feature_name]!=0: break
+def process_synapse(zarr_file, synapse_group, synapse):
 
-            elif feature_name.split('_')[0] == 'vesicle':
-                if len(synapse[feature_name])!=0: break
-                else:
-                    skipped_synapses.append(synapse)
-                    break
-    return skipped_synapses
+    # synapse_group: synapses_c0_0/0
+    # split synapse_group by /
+    #   chunk_name / synapse
+    # split chunk_name by _
+    #   synapses _ annotator _ chunk_number
 
-def filter_statistics_by_condition(statistics, condition):
+    chunk_name, _ = synapse_group.split('/')
+    _, annotator, chunk_number = chunk_name.split('_')
+    chunk_number = int(chunk_number)
 
-    feature_name = condition[1]
-    feature_short_name = feature_name.split('_')[0]
-    skipped_synapses = get_skipped_synapses(statistics)
+    synapse_id = get_synapse_id(annotator, chunk_number, synapse)
+    neurotransmitter = get_neurotransmitter(synapse_id)
+    mean_intensities = agglomerate_intensities(
+        zarr_file,
+        synapse_group,
+        np.mean)
+    median_intensities = agglomerate_intensities(
+        zarr_file,
+        synapse_group,
+        np.median)
+    post_count = get_post_count(zarr_file, synapse_group)
 
-    if feature_short_name == 'cleft' or feature_short_name == 't-bars':
+    synapse_features = {
+        'annotator': annotator,
+        'chunk_number': chunk_number,
+        'synapse_number': synapse,
+        'synapse_id': synapse_id,
+        'neurotransmitter': neurotransmitter,
+        'cleft_mean_intensity': mean_intensities['cleft'],
+        'cleft_membrane_mean_intensity': mean_intensities['cleft_membrane'],
+        't-bars_mean_intensity': mean_intensities['t-bars'],
+        'cytosol_mean_intensity': mean_intensities['cytosol'],
+        'cleft_median_intensity': median_intensities['cleft'],
+        'cleft_membrane_median_intensity': median_intensities['cleft_membrane'],
+        't-bars_median_intensity': median_intensities['t-bars'],
+        'cytosol_median_intensity': median_intensities['cytosol'],
+        'post_count': post_count
+    }
 
-        mean_or_median = feature_name.split('_')[-2]
-        statistics_filtered = [synapse for synapse in statistics if
-                      isinstance(synapse[f'cytosol_{mean_or_median}_intensity'],float) &
-                      isinstance(synapse[f'cleft_membrane_{mean_or_median}_intensity'],float) &
-                      isinstance(synapse[f'{feature_short_name}_{mean_or_median}_intensity'],float) ]
+    # get synapse statistics
+    synapse_features.update(extract_vesicle_sizes(zarr_file, synapse_group))
+    synapse_features.update(extract_vesicle_circularities(zarr_file, synapse_group))
 
-    elif feature_name in ['post_count', 'num_vesicles']:
-        statistics_filtered = [synapse for synapse in statistics if
-                      synapse not in skipped_synapses]
+    # # temporary solution
+    # # TODO: find & group duplicate synapses in one function
+    # # later: duplicate_sets = catalog_duplicates(synapse_features)
+    # with open(f"duplicates_sampled_{dataset}.json", 'r') as f:
+        # duplicate_sets = json.load(f)
 
-    elif feature_name.split('_')[0] == 'vesicle':
-        statistics_filtered = [synapse for synapse in statistics if
-                len(synapse[feature_name])!=0]
-    else:
-        print(f'ERROR: feature name {feature_name} does not exist')
-        return None
+    # # assign precedence to non-duplicates
+    # for duplicate_set in duplicate_sets:
+        # # TODO: if synapse_features['synapse_id'] not in duplicate_set:
+        # if dict(list(synapse_features.items())[0:3]) not in duplicate_set:
+            # synapse_features.update({'duplicate_precedence': 1})
 
-    return statistics_filtered
+    return synapse_features
 
-def extract_feature(statistics, condition):
+def get_synapse_id(annotator, chunk_number, synapse_number):
 
-    feature_name = condition[1].split('_')[0]
+    global file_to_ids
 
-    if feature_name == 'cleft' or feature_name == 't-bars':
+    if file_to_ids is None:
+        with open(file_to_ids_json, 'r') as f:
+            file_to_ids = json.load(f)
 
-        types,features_by_types,_ = catalog_features_by_condition(statistics, condition)
-        features = []
+    tag = f'{annotator}_{chunk_number}'
+    return file_to_ids[tag][synapse_number]
 
-        for synapse in statistics:
-            mean_or_median = condition[1].split('_')[-2]
-            val = synapse[f'{feature_name}_{mean_or_median}_intensity']
-            minimum = synapse[f'cleft_membrane_{mean_or_median}_intensity']
-            maximum = synapse[f'cytosol_{mean_or_median}_intensity']
-            features.append((val-minimum)/(maximum-minimum))
+def get_neurotransmitter(synapse_id):
 
-        for typ, feature in zip(types, features):
-            features_by_types[typ].append(feature)
+    global ids_to_nt
 
-    else:
-        types, features_by_types, features = catalog_features_by_condition(statistics, condition)
+    if ids_to_nt is None:
+        with open(ids_to_nt_json, 'r') as f:
+            ids_to_nt_tmp = json.load(f)
+            # Python json loads keys as strings:
+            ids_to_nt = {int(k): v for k, v in ids_to_nt_tmp.items()}
 
-        for typ, feature in zip(types, features):
-            features_by_types[typ].append(feature)
+    return ids_to_nt[synapse_id]
 
-    return features_by_types
+def extract_vesicle_sizes(zarr_file, synapse_group):
 
-def catalog_features_by_condition(statistics, condition):
+    vesicles = zarr_file[f'{synapse_group}/vesicles'][:]
 
-    if condition[0] == 'by_nt_types':
+    vesicle_ids, vesicle_sizes = np.unique(vesicles, return_counts=True)
+    vesicle_sizes = list([int(s) for s in vesicle_sizes[vesicle_ids!=0]])
 
-        features_by_types = {'gaba':[],'glutamate':[], 'acetylcholine':[]}
+    return {
+        'num_vesicles': len(vesicle_sizes),
+        'vesicle_sizes': vesicle_sizes
+    }
 
-        if condition[1].split('_')[0] == 'vesicle':
-            features = [size for synapse in statistics for size in
-                    synapse[condition[1]] ]
-            types = [typ for synapse in statistics for typ in
-                    [synapse['neurotransmitter']]*len(synapse[condition[1]]) ]
+def extract_vesicle_circularities(zarr_file, synapse_group):
+
+    vesicle_circularities = []
+
+    ds_name = f"{synapse_group}/{'vesicles'}"
+    layer = zarr_file[ds_name][:]
+
+    # get the layer with annotations
+    annotated_layer = get_annotated_layer(layer)
+
+    if annotated_layer is None:
+        return {'vesicle_circularities': []}
+
+    # generate a binary mask
+    unique_labels, label_counts = np.unique(annotated_layer, return_counts=True)
+    nonzero_unique_labels = unique_labels[unique_labels!=0]
+
+    for label in nonzero_unique_labels:
+
+        binary_mask = annotated_layer == label
+
+        cc_labels = skimage.measure.label(binary_mask, connectivity=1)
+        properties = skimage.measure.regionprops(cc_labels)
+        vesicle_circularity = (4 * math.pi *
+                properties[0]['area'])/(properties[0]['perimeter']**2)
+
+        vesicle_circularities.append(vesicle_circularity)
+
+    return {
+            'vesicle_circularities': vesicle_circularities
+            }
+
+def agglomerate_intensities(zarr_file, synapse_group, agglo_fun):
+
+    layer_names = ['cleft', 'cleft_membrane', 'cytosol', 't-bars']
+    agglomerated_intensities = {}
+
+    # get raw intensities and annotated regions
+    raw = zarr_file[f'{synapse_group}/raw'][:]
+
+    for layer_name in layer_names:
+
+        layer = zarr_file[f'{synapse_group}/{layer_name}'][:]
+
+        if np.sum(layer) == 0:
+            agglomerated_intensities.update({
+                f'{layer_name}': None
+            })
 
         else:
-            features = [synapse[condition[1]] for synapse in statistics]
-            types = [synapse['neurotransmitter'] for synapse in statistics]
+            agglomerated_intensities.update({
+                f'{layer_name}': float(agglo_fun(raw[layer!=0]))
+            })
 
-    if condition[0] == 'by_annotators':
+    if (
+            agglomerated_intensities['cleft'] != None and
+            agglomerated_intensities['cleft_membrane'] != None):
 
-        features_by_types = {'c0':[],'c1':[], 'c2':[]}
+        cleft_membrane = zarr_file[f'{synapse_group}/cleft_membrane'][:]
+        cleft = zarr_file[f'{synapse_group}/cleft'][:]
 
-        if condition[1].split('_')[0] == 'vesicle':
-            features = [size for synapse in statistics for size in
-                    synapse[condition[1]] ]
-            types = [typ for synapse in statistics for typ in
-                    [synapse['annotator']]*len(synapse[condition[1]]) ]
+        mask_cleft = cleft != 0
+        mask_cleft_membrane = cleft_membrane != 0
 
+        # this is True where membrane == True AND not cleft == True
+        mask_only_cleft_membrane = mask_cleft_membrane & ~mask_cleft
+        agglomerated_intensities.update({
+            f'cleft_membrane' :
+            float(agglo_fun(raw[mask_only_cleft_membrane]))
+        })
+
+    return agglomerated_intensities
+
+def get_post_count(zarr_file, synapse_group):
+
+    layer = zarr_file[f'{synapse_group}/posts'][:]
+    unique_labels, label_counts = np.unique(layer, return_counts=True)
+    # print(f"post count {len(label_counts) - 1}")
+    return len(label_counts) - 1
+
+def get_annotated_layer(layer):
+
+    for z in range(29):
+        if np.sum(layer[z,:,:])!=0:
+            return layer[z,:,:].reshape(-1, layer[z,:,:].shape[-1])
+
+    # no annotation found in all layers
+    return None
+
+def assign_precedence_to_duplicates(synapse_features):
+
+    # dictionary from synapse_id to list of indices into synapse_features
+    duplicate_sets = {}
+    for i, synapse in enumerate(synapse_features):
+        synapse_id = synapse['synapse_id']
+        if synapse_id in duplicate_sets:
+            duplicate_sets[synapse_id].append(i)
         else:
-            features = [synapse[condition[1]] for synapse in statistics]
-            types = [synapse['annotator'] for synapse in statistics]
+            duplicate_sets[synapse_id] = [i]
 
-    return types, features_by_types, features
+    random.seed(1976)  # Fei-Fei Li's birthyear :)
+
+    # assign random precedences to each duplicate
+    duplicate_precedences = {}
+    for synapse_id, duplicate_set in duplicate_sets.items():
+
+        # we want that: [2, 1] or [1, 2] ....
+        # we do not want that: [1, 1] or [2, 2]
+        duplicate_precedence = list(range(1, len(duplicate_set) + 1))
+        random.shuffle(duplicate_precedence)
+        duplicate_precedences[synapse_id] = duplicate_precedence
+
+    for synapse_id in duplicate_sets.keys():
+
+        indices = duplicate_sets[synapse_id]
+        precedences = duplicate_precedences[synapse_id]
+
+        assert len(indices) == len(precedences)
+
+        for i, p in zip(indices, precedences):
+            synapse_features[i]['duplicate_precedence'] = p
 
 if __name__ == "__main__":
 
-    # handle full statistics
-    with open(f"synapse_statistics_{dataset}.json", 'r') as f:
-        statistics = json.load(f)
+    zarr_file = zarr.open(f'../data/{dataset}.zarr', 'r')
 
-#     # handle duplicates
-#     with open(f"duplicate_statistics_{dataset}.json", 'r') as f:
-#         statistics = json.load(f)
+    # what we want:
+    #
+    # list of dictionaries, one for each synapse, like:
+    #
+    #   {
+    #       'annotator': 'c0',
+    #       'chunk_number': 1,
+    #       'synapse_number': 2,  # the number of the syn in the chunk
+    #       'synapse_id': '38472171743',  # original CATMAID ID
+    #       'neurotransmitter': 'gaba',
+    #
+    #       'num_vesicles': 5,
+    #       'vesicle_sizes': [23, 43, ...]
+    #          (...and a few more later)
+    #   }
 
-    feature_names = ['cleft_mean_intensity', 't-bars_mean_intensity',
-            't-bars_mean_intensity', 'cleft_median_intensity',
-            't-bars_median_intensity', 'post_count', 'num_vesicles',
-            'vesicle_sizes', 'vesicle_circularities']
+    synapse_features = []
 
-    extracted_features = {}
+    for annotator in annotators:
 
-    # conditions = [(by_nt_type, feature_name)]
-    # e.g. conditions = [('by_nt_types', 'vesicle_size'), ('by_annotators',
-    # 'post_count'),...]
+        for chunk in range(max_num_chunks):
 
-    conditions_by_nt_types = list(zip(['by_nt_types']*len(feature_names), feature_names))
-    conditions_by_annotators = list(zip(['by_annotators']*len(feature_names), feature_names))
-    conditions = conditions_by_nt_types + conditions_by_annotators
-    print(f'conditions are {conditions}')
+            chunk_group = f'synapses_{annotator}_{chunk}'
 
-    for condition in conditions:
+            if chunk_group not in zarr_file:
+                continue
 
-        print(f'Extracting feature under condition {condition}')
-        statistics_filtered = filter_statistics_by_condition(statistics, condition)
+            print(f"Processing chunk {chunk_group}...")
 
-        # extracted_features = {'gaba':[..],'glutamate':[..], 'acetylcholine':[..]} 
-        # or {'c0':[..],'c1':[..], 'c2':[..]}
-        extracted_feature = extract_feature(statistics_filtered, condition)
-        extracted_features.update({str(condition) : extracted_feature})
+            synapse_features += process_chunk(zarr_file, chunk_group)
 
-    # handle full statistics
-    with open(f'extracted_features_{dataset}.json', 'w') as f:
-        json.dump(extracted_features, f, indent=2)
+    assign_precedence_to_duplicates(synapse_features)
 
-#     # handle duplicates
-#     with open(f'extracted_duplicate_features_{dataset}.json', 'w') as f:
-#         json.dump(extracted_features, f, indent=2)
-
-
+    with open(f'synapse_features_{dataset}.json', 'w') as f:
+        json.dump(synapse_features, f, indent=2)
