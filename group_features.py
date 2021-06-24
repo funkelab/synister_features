@@ -4,7 +4,7 @@ import copy
 
 dataset = '20210609'
 
-def get_skipped_synapses(statistics):
+def get_skipped_synapses(features):
 
     skipped_synapses = []
     feature_names = ['cleft_mean_intensity', 'cleft_membrane_mean_intensity',
@@ -13,12 +13,12 @@ def get_skipped_synapses(statistics):
     't-bars_median_intensity','cytosol_median_intensity', 'post_count',
     'num_vesicles', 'vesicle_sizes', 'vesicle_circularities']
 
-    for synapse in statistics:
+    for synapse in features:
 
         for feature_name in list(synapse.keys())[5:]:
 
             if feature_name.split('_')[-1] == 'intensity':
-                if synapse[feature_name]!='skip': break
+                if synapse[feature_name] != None: break
 
             elif feature_name in ['post_count', 'num_vesicles']:
                 if synapse[feature_name]!=0: break
@@ -30,91 +30,91 @@ def get_skipped_synapses(statistics):
                     break
     return skipped_synapses
 
-def filter_statistics_by_condition(statistics, condition):
+def filter_features_by_condition(features, condition):
 
     feature_name = condition[1]
     feature_short_name = feature_name.split('_')[0]
-    skipped_synapses = get_skipped_synapses(statistics)
+    skipped_synapses = get_skipped_synapses(features)
 
     if feature_short_name == 'cleft' or feature_short_name == 't-bars':
 
         mean_or_median = feature_name.split('_')[-2]
-        statistics_filtered = [synapse for synapse in statistics if
+        features_filtered = [synapse for synapse in features if
                       isinstance(synapse[f'cytosol_{mean_or_median}_intensity'],float) &
                       isinstance(synapse[f'cleft_membrane_{mean_or_median}_intensity'],float) &
                       isinstance(synapse[f'{feature_short_name}_{mean_or_median}_intensity'],float) ]
 
     elif feature_name in ['post_count', 'num_vesicles']:
-        statistics_filtered = [synapse for synapse in statistics if
+        features_filtered = [synapse for synapse in features if
                       synapse not in skipped_synapses]
 
     elif feature_name.split('_')[0] == 'vesicle':
-        statistics_filtered = [synapse for synapse in statistics if
+        features_filtered = [synapse for synapse in features if
                 len(synapse[feature_name])!=0]
     else:
         print(f'ERROR: feature name {feature_name} does not exist')
         return None
 
-    return statistics_filtered
+    return features_filtered
 
-def extract_feature(statistics, condition):
+def extract_feature(features, condition):
 
     feature_name = condition[1].split('_')[0]
 
     if feature_name == 'cleft' or feature_name == 't-bars':
 
-        types,features_by_types,_ = catalog_features_by_condition(statistics, condition)
-        features = []
+        feature_types,features_by_types,_ = catalog_features_by_condition(features, condition)
+        feature_values = []
 
-        for synapse in statistics:
+        for synapse in features:
             mean_or_median = condition[1].split('_')[-2]
             val = synapse[f'{feature_name}_{mean_or_median}_intensity']
             minimum = synapse[f'cleft_membrane_{mean_or_median}_intensity']
             maximum = synapse[f'cytosol_{mean_or_median}_intensity']
-            features.append((val-minimum)/(maximum-minimum))
+            feature_values.append((val-minimum)/(maximum-minimum))
 
-        for typ, feature in zip(types, features):
-            features_by_types[typ].append(feature)
+        for feature_type, feature_value in zip(feature_types, feature_values):
+            features_by_types[feature_type].append(feature_value)
 
     else:
-        types, features_by_types, features = catalog_features_by_condition(statistics, condition)
+        feature_types, features_by_types, feature_values = catalog_features_by_condition(features, condition)
 
-        for typ, feature in zip(types, features):
-            features_by_types[typ].append(feature)
+        for feature_type, feature_value in zip(feature_types, feature_values):
+            features_by_types[feature_type].append(feature_value)
 
     return features_by_types
 
-def catalog_features_by_condition(statistics, condition):
+def catalog_features_by_condition(features, condition):
 
     if condition[0] == 'by_nt_types':
 
         features_by_types = {'gaba':[],'glutamate':[], 'acetylcholine':[]}
 
         if condition[1].split('_')[0] == 'vesicle':
-            features = [size for synapse in statistics for size in
+            feature_values = [size for synapse in features for size in
                     synapse[condition[1]] ]
-            types = [typ for synapse in statistics for typ in
+            feature_types = [typ for synapse in features for typ in
                     [synapse['neurotransmitter']]*len(synapse[condition[1]]) ]
 
         else:
-            features = [synapse[condition[1]] for synapse in statistics]
-            types = [synapse['neurotransmitter'] for synapse in statistics]
+            feature_values = [synapse[condition[1]] for synapse in features]
+            feature_types = [synapse['neurotransmitter'] for synapse in features]
 
     if condition[0] == 'by_annotators':
 
         features_by_types = {'c0':[],'c1':[], 'c2':[]}
 
         if condition[1].split('_')[0] == 'vesicle':
-            features = [size for synapse in statistics for size in
+            feature_values = [size for synapse in features for size in
                     synapse[condition[1]] ]
-            types = [typ for synapse in statistics for typ in
+            feature_types = [typ for synapse in features for typ in
                     [synapse['annotator']]*len(synapse[condition[1]]) ]
 
         else:
-            features = [synapse[condition[1]] for synapse in statistics]
-            types = [synapse['annotator'] for synapse in statistics]
+            feature_values = [synapse[condition[1]] for synapse in features]
+            feature_types = [synapse['annotator'] for synapse in features]
 
-    return types, features_by_types, features
+    return feature_types, features_by_types, feature_values
 
 if __name__ == "__main__":
 
