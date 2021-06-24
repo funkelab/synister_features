@@ -116,26 +116,58 @@ def catalog_features_by_condition(features, condition):
 
     return feature_types, features_by_types, feature_values
 
-if __name__ == "__main__":
+def group_features_by_conditions():
+    '''
+    Group synapse features by different conditions.
 
-    # handle full statistics
-    with open(f"synapse_statistics_{dataset}.json", 'r') as f:
-        statistics = json.load(f)
+    A "condition" is a tuple of two parts:
 
-#     # handle duplicates
-#     with open(f"duplicate_statistics_{dataset}.json", 'r') as f:
-#         statistics = json.load(f)
+        1. what to group by (either by neurotransmitter or by annotator)
+        2. the name of a feature (e.g., "num_vesicles")
+
+    Returns a dictionary that looks like:
+
+    ```
+    {
+        ('by_nt_types', 'feature'): {
+            'gaba': ...,
+            'glutamate': ...,
+            'acetylcholine': ...
+        },
+        # ... more features
+
+        ('by_annotators', 'feature'): {
+            'c0': ...,
+            'c1': ...,
+            'c2': ...
+        },
+        # ... more features
+    }
+    ```
+
+    Features should have been extracted earlier with `./extract_features.py`,
+    which puts them into <synapse_features_{dataset}.json>.
+
+
+    This function can be used in a jupyter notebook:
+
+    ```
+    from group_features import group_features_by_conditions
+
+    features = group_features_by_conditions()
+    ```
+    '''
+
+    # handle full features
+    with open(f"synapse_features_{dataset}.json", 'r') as f:
+        features = json.load(f)
 
     feature_names = ['cleft_mean_intensity', 't-bars_mean_intensity',
             't-bars_mean_intensity', 'cleft_median_intensity',
             't-bars_median_intensity', 'post_count', 'num_vesicles',
             'vesicle_sizes', 'vesicle_circularities']
 
-    extracted_features = {}
-
-    # conditions = [(by_nt_type, feature_name)]
-    # e.g. conditions = [('by_nt_types', 'vesicle_size'), ('by_annotators',
-    # 'post_count'),...]
+    grouped_features = {}
 
     conditions_by_nt_types = list(zip(['by_nt_types']*len(feature_names), feature_names))
     conditions_by_annotators = list(zip(['by_annotators']*len(feature_names), feature_names))
@@ -145,19 +177,11 @@ if __name__ == "__main__":
     for condition in conditions:
 
         print(f'Extracting feature under condition {condition}')
-        statistics_filtered = filter_statistics_by_condition(statistics, condition)
+        features_filtered = filter_features_by_condition(features, condition)
 
-        # extracted_features = {'gaba':[..],'glutamate':[..], 'acetylcholine':[..]} 
-        # or {'c0':[..],'c1':[..], 'c2':[..]}
-        extracted_feature = extract_feature(statistics_filtered, condition)
-        extracted_features.update({str(condition) : extracted_feature})
+        extracted_feature = extract_feature(features_filtered, condition)
+        grouped_features.update({str(condition) : extracted_feature})
 
-    # handle full statistics
-    with open(f'extracted_features_{dataset}.json', 'w') as f:
-        json.dump(extracted_features, f, indent=2)
-
-#     # handle duplicates
-#     with open(f'extracted_duplicate_features_{dataset}.json', 'w') as f:
-#         json.dump(extracted_features, f, indent=2)
+    return grouped_features
 
 
