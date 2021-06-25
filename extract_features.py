@@ -6,7 +6,7 @@ import math
 import sys
 import random
 
-dataset = '20210609'
+dataset = '20210625'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
 annotators = ['c0', 'c1', 'c2']
@@ -20,10 +20,32 @@ def process_chunk(zarr_file, chunk_group):
     chunk_stats = []
 
     for synapse in range(10):
-        synapse_features = process_synapse(zarr_file, f'{chunk_group}/{synapse}', synapse)
-        chunk_stats.append(synapse_features)
+
+        synapse_group = f'{chunk_group}/{synapse}'
+
+        # not to process synapses that are skipped
+        if not skip_synapse(zarr_file, synapse_group):
+            synapse_features = process_synapse(zarr_file, synapse_group, synapse)
+            chunk_stats.append(synapse_features)
 
     return chunk_stats
+
+def skip_synapse(zarr_file, synapse_group):
+
+    layer_names = ['cleft', 'cleft_membrane', 'cytosol', 'posts',
+            't-bars', 'vesicles']
+
+    for layer_name in layer_names:
+
+        ds_name = f'{synapse_group}/{layer_name}'
+        layer = zarr_file[ds_name][:]
+
+        if np.sum(layer) != 0:
+            # print(f'{ds_name} sum to {np.sum(layer)}')
+            return False
+
+    print(f'skip synapse {ds_name}')
+    return True
 
 def process_synapse(zarr_file, synapse_group, synapse):
 
@@ -69,18 +91,6 @@ def process_synapse(zarr_file, synapse_group, synapse):
     # get synapse statistics
     synapse_features.update(extract_vesicle_sizes(zarr_file, synapse_group))
     synapse_features.update(extract_vesicle_circularities(zarr_file, synapse_group))
-
-    # # temporary solution
-    # # TODO: find & group duplicate synapses in one function
-    # # later: duplicate_sets = catalog_duplicates(synapse_features)
-    # with open(f"duplicates_sampled_{dataset}.json", 'r') as f:
-        # duplicate_sets = json.load(f)
-
-    # # assign precedence to non-duplicates
-    # for duplicate_set in duplicate_sets:
-        # # TODO: if synapse_features['synapse_id'] not in duplicate_set:
-        # if dict(list(synapse_features.items())[0:3]) not in duplicate_set:
-            # synapse_features.update({'duplicate_precedence': 1})
 
     return synapse_features
 
@@ -142,8 +152,7 @@ def extract_vesicle_circularities(zarr_file, synapse_group):
 
         cc_labels = skimage.measure.label(binary_mask, connectivity=1)
         properties = skimage.measure.regionprops(cc_labels)
-        vesicle_circularity = (4 * math.pi *
-                properties[0]['area'])/(properties[0]['perimeter']**2)
+        vesicle_circularity = properties[0]['eccentricity']
 
         vesicle_circularities.append(vesicle_circularity)
 
@@ -196,7 +205,7 @@ def get_post_count(zarr_file, synapse_group):
 
     layer = zarr_file[f'{synapse_group}/posts'][:]
     unique_labels, label_counts = np.unique(layer, return_counts=True)
-    # print(f"post count {len(label_counts) - 1}")
+
     return len(label_counts) - 1
 
 def get_annotated_layer(layer):
@@ -208,7 +217,7 @@ def get_annotated_layer(layer):
     # no annotation found in all layers
     return None
 
-def assign_precedence_to_duplicates(synapse_features):
+def assign_number_to_duplicates(synapse_features):
 
     # dictionary from synapse_id to list of indices into synapse_features
     duplicate_sets = {}
@@ -221,25 +230,25 @@ def assign_precedence_to_duplicates(synapse_features):
 
     random.seed(1976)  # Fei-Fei Li's birthyear :)
 
-    # assign random precedences to each duplicate
-    duplicate_precedences = {}
+    # assign random numbers to each duplicate
+    duplicate_numbers = {}
     for synapse_id, duplicate_set in duplicate_sets.items():
 
         # we want that: [2, 1] or [1, 2] ....
         # we do not want that: [1, 1] or [2, 2]
-        duplicate_precedence = list(range(1, len(duplicate_set) + 1))
-        random.shuffle(duplicate_precedence)
-        duplicate_precedences[synapse_id] = duplicate_precedence
+        duplicate_number = list(range(1, len(duplicate_set) + 1))
+        random.shuffle(duplicate_number)
+        duplicate_numbers[synapse_id] = duplicate_number
 
     for synapse_id in duplicate_sets.keys():
 
         indices = duplicate_sets[synapse_id]
-        precedences = duplicate_precedences[synapse_id]
+        numbers = duplicate_numbers[synapse_id]
 
-        assert len(indices) == len(precedences)
+        assert len(indices) == len(numbers)
 
-        for i, p in zip(indices, precedences):
-            synapse_features[i]['duplicate_precedence'] = p
+        for i, p in zip(indices, numbers):
+            synapse_features[i]['duplicate_number'] = p
 
 if __name__ == "__main__":
 
@@ -276,7 +285,7 @@ if __name__ == "__main__":
 
             synapse_features += process_chunk(zarr_file, chunk_group)
 
-    assign_precedence_to_duplicates(synapse_features)
+    assign_number_to_duplicates(synapse_features)
 
     with open(f'synapse_features_{dataset}.json', 'w') as f:
         json.dump(synapse_features, f, indent=2)
