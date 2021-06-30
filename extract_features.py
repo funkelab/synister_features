@@ -6,7 +6,7 @@ import math
 import sys
 import random
 
-dataset = '20210625'
+dataset = '20210630'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
 annotators = ['c0', 'c1', 'c2']
@@ -71,6 +71,8 @@ def process_synapse(zarr_file, synapse_group, synapse):
         np.median)
     post_count = get_post_count(zarr_file, synapse_group)
 
+    # feature_values.append((val-minimum)/(maximum-minimum))
+
     synapse_features = {
         'annotator': annotator,
         'chunk_number': chunk_number,
@@ -88,9 +90,23 @@ def process_synapse(zarr_file, synapse_group, synapse):
         'post_count': post_count
     }
 
+    # add normalized features
+
+    for agglo in ['mean', 'median']:
+        for structure in ['t-bars', 'cleft']:
+            intensity = synapse_features[f'{structure}_{agglo}_intensity']
+            if intensity is None:
+                normalized_intensity = None
+            else:
+                minimum = synapse_features[f'cleft_membrane_{agglo}_intensity']
+                maximum = synapse_features[f'cytosol_{agglo}_intensity']
+                normalized_intensity = ((intensity - minimum)/(maximum - minimum))
+            synapse_features[f'{structure}_{agglo}_normalized_intensity'] = \
+                normalized_intensity
+
     # get synapse statistics
     synapse_features.update(extract_vesicle_sizes(zarr_file, synapse_group))
-    synapse_features.update(extract_vesicle_circularities(zarr_file, synapse_group))
+    synapse_features.update(extract_vesicle_eccentricities(zarr_file, synapse_group))
 
     return synapse_features
 
@@ -129,9 +145,9 @@ def extract_vesicle_sizes(zarr_file, synapse_group):
         'vesicle_sizes': vesicle_sizes
     }
 
-def extract_vesicle_circularities(zarr_file, synapse_group):
+def extract_vesicle_eccentricities(zarr_file, synapse_group):
 
-    vesicle_circularities = []
+    vesicle_eccentricities = []
 
     ds_name = f"{synapse_group}/{'vesicles'}"
     layer = zarr_file[ds_name][:]
@@ -140,7 +156,7 @@ def extract_vesicle_circularities(zarr_file, synapse_group):
     annotated_layer = get_annotated_layer(layer)
 
     if annotated_layer is None:
-        return {'vesicle_circularities': []}
+        return {'vesicle_eccentricities': []}
 
     # generate a binary mask
     unique_labels, label_counts = np.unique(annotated_layer, return_counts=True)
@@ -152,12 +168,12 @@ def extract_vesicle_circularities(zarr_file, synapse_group):
 
         cc_labels = skimage.measure.label(binary_mask, connectivity=1)
         properties = skimage.measure.regionprops(cc_labels)
-        vesicle_circularity = properties[0]['eccentricity']
+        vesicle_eccentricity = properties[0]['eccentricity']
 
-        vesicle_circularities.append(vesicle_circularity)
+        vesicle_eccentricities.append(vesicle_eccentricity)
 
     return {
-            'vesicle_circularities': vesicle_circularities
+            'vesicle_eccentricities': vesicle_eccentricities
             }
 
 def agglomerate_intensities(zarr_file, synapse_group, agglo_fun):
