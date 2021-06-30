@@ -152,7 +152,7 @@ def group_features_by_conditions(condition, filter='unique'):
     ```
     Returns:
     ```
-    {
+             ...    {
         'vesicle_sizes': {
             ('c0', 'glutamate'): [....],
             ('c0', 'gaba'): [....],
@@ -214,5 +214,5 @@ def group_features_by_conditions(condition, filter='unique'):
         for feature_name in feature_names
     }
 
-    return group_features
+    return grouped_features
 
