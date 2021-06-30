@@ -75,7 +75,7 @@ def group_features(features, feature_name, group_condition):
             condition
             for synapse in features
             for condition in [
-                (synapse[key] for key in grouping_keys)
+                synapse[key] for key in grouping_keys
             ]*len(synapse[feature_name])
         ]
 
@@ -83,9 +83,19 @@ def group_features(features, feature_name, group_condition):
 
         feature_values = [synapse[feature_name] for synapse in features]
         conditions = [
-            (synapse[key] for key in grouping_keys)
+            synapse[key]
+            for key in grouping_keys
             for synapse in features
         ]
+       #for synapse in features:
+            #for key in grouping_keys:
+                # print(f"key is {key} '\n' ")
+                # print(f"condition is {synapse[key]}; condition type is {type(synapse[key])}")
+
+    #print(f'current feature name is {feature_name}')
+    #print(f'group condition is {group_condition}')
+    #print(f"conditions are '\n' {conditions}")
+    #return
 
     grouped_features = {}
     for condition, feature_value in zip(conditions, feature_values):
