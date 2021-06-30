@@ -2,79 +2,33 @@ import numpy as np
 import json
 import copy
 
-dataset = '20210625'
+dataset = '20210630'
 
-def filter_features_by_condition(features, condition, duplicate_number):
 
-    feature_name = condition[1]
-    feature_short_name = feature_name.split('_')[0]
+def filter_synapses(features, feature_name):
+    '''Filter out all synapses that do not have the requested feature.'''
 
-    # prefilter features according to duplicate_number
+    if feature_name.startswith('vesicle'):
 
-    if duplicate_number == 1 or duplicate_number > 2:
-
-        prefiltered_features = [synapse for synapse in features if
-                synapse['duplicate_number'] == duplicate_number]
-
-    elif duplicate_number == None:
-        prefiltered_features = features
+        features_filtered = [
+            synapse
+            for synapse in features
+            if synapse[feature_name]
+        ]
 
     else:
-        duplicate_synapse_ids = get_duplicate_synapse_ids(features)
-        prefiltered_features  = [synapse for synapse in features if
-                synapse['synapse_id'] in duplicate_synapse_ids]
 
-    # filter again based on condition
-
-    if feature_short_name == 'cleft' or feature_short_name == 't-bars':
-
-        mean_or_median = feature_name.split('_')[-2]
-        features_filtered = [synapse for synapse in prefiltered_features if
-                      isinstance(synapse[f'cytosol_{mean_or_median}_intensity'],float) &
-                      isinstance(synapse[f'cleft_membrane_{mean_or_median}_intensity'],float) &
-                      isinstance(synapse[f'{feature_short_name}_{mean_or_median}_intensity'],float) ]
-
-    elif feature_short_name == 'vesicle':
-        features_filtered = [synapse for synapse in prefiltered_features if
-                len(synapse[feature_name])!=0]
-
-    elif feature_name in ['num_vesicles', 'post_count']:
-        features_filtered = prefiltered_features
-
-    else:
-        print(f'ERROR: feature name {feature_name} does not exist')
-        return None
+        features_filtered = [
+            synapse
+            for synapse in features
+            if synapse[feature_name] is not None
+        ]
 
     return features_filtered
 
-def extract_feature(features, condition):
-
-    feature_name = condition[1].split('_')[0]
-
-    if feature_name == 'cleft' or feature_name == 't-bars':
-
-        feature_types,features_by_types,_ = catalog_features_by_condition(features, condition)
-        feature_values = []
-
-        for synapse in features:
-            mean_or_median = condition[1].split('_')[-2]
-            val = synapse[f'{feature_name}_{mean_or_median}_intensity']
-            minimum = synapse[f'cleft_membrane_{mean_or_median}_intensity']
-            maximum = synapse[f'cytosol_{mean_or_median}_intensity']
-            feature_values.append((val-minimum)/(maximum-minimum))
-
-        for feature_type, feature_value in zip(feature_types, feature_values):
-            features_by_types[feature_type].append(feature_value)
-
-    else:
-        feature_types, features_by_types, feature_values = catalog_features_by_condition(features, condition)
-
-        for feature_type, feature_value in zip(feature_types, feature_values):
-            features_by_types[feature_type].append(feature_value)
-
-    return features_by_types
 
 def get_duplicate_synapse_ids(features):
+    '''Return a set of synapse IDs that have been annotated more than once.'''
 
     duplicate_sets = {}
     duplicate_synapse_ids = set({})
@@ -94,64 +48,119 @@ def get_duplicate_synapse_ids(features):
 
     return duplicate_synapse_ids
 
-def catalog_features_by_condition(features, condition):
 
-    if condition[0] == 'by_nt_types':
+def group_features(features, feature_name, group_condition):
+    '''Group features with a given name by the given condition.'''
 
-        features_by_types = {'gaba':[],'glutamate':[], 'acetylcholine':[]}
+    # make sure to not use undefined features
+    features = filter_synapses(features, feature_name)
 
-        if condition[1].split('_')[0] == 'vesicle':
-            feature_values = [size for synapse in features for size in
-                    synapse[condition[1]] ]
-            feature_types = [typ for synapse in features for typ in
-                    [synapse['neurotransmitter']]*len(synapse[condition[1]]) ]
+    grouping_keys = [
+        {
+            'by_nt_types': 'neurotransmitter',
+            'by_annotators': 'annotator'
+        }[c]
+        for c in group_condition
+    ]
 
-        else:
-            feature_values = [synapse[condition[1]] for synapse in features]
-            feature_types = [synapse['neurotransmitter'] for synapse in features]
+    # list of features for vesicles, instead of a single number
+    if feature_name.startswith('vesicle'):
 
-    if condition[0] == 'by_annotators':
+        feature_values = [
+            value
+            for synapse in features
+            for value in synapse[feature_name]
+        ]
+        conditions = [
+            condition
+            for synapse in features
+            for condition in [
+                (synapse[key] for key in grouping_keys)
+            ]*len(synapse[feature_name])
+        ]
 
-        features_by_types = {'c0':[],'c1':[], 'c2':[]}
+    else:
 
-        if condition[1].split('_')[0] == 'vesicle':
-            feature_values = [size for synapse in features for size in
-                    synapse[condition[1]] ]
-            feature_types = [typ for synapse in features for typ in
-                    [synapse['annotator']]*len(synapse[condition[1]]) ]
+        feature_values = [synapse[feature_name] for synapse in features]
+        conditions = [
+            (synapse[key] for key in grouping_keys)
+            for synapse in features
+        ]
 
-        else:
-            feature_values = [synapse[condition[1]] for synapse in features]
-            feature_types = [synapse['annotator'] for synapse in features]
+    grouped_features = {}
+    for condition, feature_value in zip(conditions, feature_values):
+        if condition not in grouped_features:
+            grouped_features[condition] = []
+        grouped_features[condition].append(feature_value)
 
-    return feature_types, features_by_types, feature_values
+    return grouped_features
 
-def group_features_by_conditions(duplicate_number):
+def group_features_by_conditions(condition, filter='unique'):
     '''
     Group synapse features by different conditions.
 
-    A "condition" is a tuple of two parts:
+    Args:
 
-        1. what to group by (either by neurotransmitter or by annotator)
-        2. the name of a feature (e.g., "num_vesicles")
+        condition (tuple of strings):
+
+            Possible values are "by_nt_types" and "by_annotators".
+
+        filter (string, optional):
+
+            Possible values are "unique", "same", "all":
+
+                "unique": All synapses with duplicate_number 1 (default).
+
+                "same": Only synapses that have been annotated by at least two
+                annotators. Results will be grouped by pairs of annotators.
+
+                "all": All synpases (including duplicates).
+
 
     Returns a dictionary that looks like:
 
     ```
     {
-        ('by_nt_types', 'feature'): {
-            'gaba': ...,
-            'glutamate': ...,
-            'acetylcholine': ...
+        <feature_name>: {
+            <condidation_1>: ...,
+            <condidation_2>: ...,
+            <condidation_3>: ...
+            ...
         },
         # ... more features
+    }
+    ```
 
-        ('by_annotators', 'feature'): {
-            'c0': ...,
-            'c1': ...,
-            'c2': ...
-        },
-        # ... more features
+    Examples:
+
+    ```
+    group_features_by_conditions(('by_annotators',))
+    ```
+    Returns:
+    ```
+    {
+        'vesicle_sizes': {
+            ('c0',): [....],
+            ('c1',): [....],
+            ('c2',): [....]
+        }
+    }
+    ```
+
+    ```
+    group_features_by_conditions(('by_annotators', 'by_nt_types'))
+    ```
+    Returns:
+    ```
+    {
+        'vesicle_sizes': {
+            ('c0', 'glutamate'): [....],
+            ('c0', 'gaba'): [....],
+            ...
+            ('c1', 'glutamate'): [....],
+            ('c1', 'gaba'): [....]
+            ...
+        }
     }
     ```
 
@@ -164,7 +173,7 @@ def group_features_by_conditions(duplicate_number):
     ```
     from group_features import group_features_by_conditions
 
-    features = group_features_by_conditions()
+    features = group_features_by_conditions(('by_nt_types',))
     ```
     '''
 
@@ -175,9 +184,37 @@ def group_features_by_conditions(duplicate_number):
     feature_names = ['cleft_mean_intensity', 't-bars_mean_intensity',
             't-bars_mean_intensity', 'cleft_median_intensity',
             't-bars_median_intensity', 'post_count', 'num_vesicles',
-            'vesicle_sizes', 'vesicle_circularities']
+            'vesicle_sizes', 'vesicle_eccentricities']
 
-    grouped_features = {}
+    # filter based on duplicate numbers
+
+    if filter == 'unique':
+        filtered_features = [
+            f
+            for f in features
+            if f['duplicate_number'] == 1
+        ]
+    elif filter == 'same':
+        duplicate_synapse_ids = get_duplicate_synapse_ids(features)
+        filtered_features = [
+            f
+            for f in features
+            if f['synapse_id'] in duplicate_synapse_ids
+        ]
+    elif filter == 'all':
+        filtered_features = features
+    else:
+        raise RuntimeError("'filter' should be 'unique', 'same', or 'all'")
+
+    for c in condition:
+        assert c in ['by_nt_types', 'by_annotators']
+
+    grouped_features = {
+        feature_name: group_features(features, feature_name, condition)
+        for feature_name in feature_names
+    }
+
+    return group_features
 
     conditions_by_nt_types = list(zip(['by_nt_types']*len(feature_names), feature_names))
     conditions_by_annotators = list(zip(['by_annotators']*len(feature_names), feature_names))
