@@ -216,22 +216,3 @@ def group_features_by_conditions(condition, filter='unique'):
 
     return group_features
 
-    conditions_by_nt_types = list(zip(['by_nt_types']*len(feature_names), feature_names))
-    conditions_by_annotators = list(zip(['by_annotators']*len(feature_names), feature_names))
-    conditions = conditions_by_nt_types + conditions_by_annotators
-    print(f'conditions are {conditions}')
-
-    # 'None' duplicate_number means to group only duplicate features
-    for condition in conditions:
-
-        print(f'Extracting feature under condition {condition}')
-        features_filtered = filter_features_by_condition(
-            features,
-            condition,
-            duplicate_number)
-
-        extracted_feature = extract_feature(features_filtered, condition)
-        grouped_features.update({str(condition) : extracted_feature})
-
-    return grouped_features
-
