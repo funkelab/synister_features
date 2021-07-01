@@ -57,8 +57,8 @@ def group_features(features, feature_name, group_condition):
 
     grouping_keys = [
         {
-            'by_nt_types': 'neurotransmitter',
-            'by_annotators': 'annotator'
+            'by_annotators': 'annotator',
+            'by_nt_types': 'neurotransmitter'
         }[c]
         for c in group_condition
     ]
@@ -74,28 +74,28 @@ def group_features(features, feature_name, group_condition):
         conditions = [
             condition
             for synapse in features
-            for condition in [
-                synapse[key] for key in grouping_keys
-            ]*len(synapse[feature_name])
+            for condition in list(
+            ((tuple([synapse[key] for key in grouping_keys]),)
+            *len(synapse[feature_name]) )
+            )
         ]
 
     else:
 
         feature_values = [synapse[feature_name] for synapse in features]
-        conditions = [
-            synapse[key]
-            for key in grouping_keys
-            for synapse in features
-        ]
-       #for synapse in features:
-            #for key in grouping_keys:
-                # print(f"key is {key} '\n' ")
-                # print(f"condition is {synapse[key]}; condition type is {type(synapse[key])}")
-
-    #print(f'current feature name is {feature_name}')
-    #print(f'group condition is {group_condition}')
-    #print(f"conditions are '\n' {conditions}")
-    #return
+        conditions = []
+        for key in grouping_keys:
+            for synapse in features:
+                conditions.append(tuple(
+                    [synapse[key]
+                    for synapse in features
+                    for key in grouping_keys]
+                ))
+        #conditions = [
+        #    tuple([synapse[key]
+        #    for synapse in features
+        #    for key in grouping_keys])
+        #]
 
     grouped_features = {}
     for condition, feature_value in zip(conditions, feature_values):
@@ -193,7 +193,11 @@ def group_features_by_conditions(condition, filter='unique'):
 
     feature_names = ['cleft_mean_intensity', 't-bars_mean_intensity',
             't-bars_mean_intensity', 'cleft_median_intensity',
-            't-bars_median_intensity', 'post_count', 'num_vesicles',
+            't-bars_median_intensity', 't-bars_mean_normalized_intensity',
+            'cleft_mean_normalized_intensity',
+            't-bars_median_normalized_intensity',
+            'cleft_median_normalized_intensity',
+            'post_count', 'num_vesicles',
             'vesicle_sizes', 'vesicle_eccentricities']
 
     # filter based on duplicate numbers
@@ -216,8 +220,8 @@ def group_features_by_conditions(condition, filter='unique'):
     else:
         raise RuntimeError("'filter' should be 'unique', 'same', or 'all'")
 
-    for c in condition:
-        assert c in ['by_nt_types', 'by_annotators']
+    #for c in condition:
+     #   assert c in ['by_nt_types', 'by_annotators']
 
     grouped_features = {
         feature_name: group_features(features, feature_name, condition)
