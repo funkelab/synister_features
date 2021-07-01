@@ -84,13 +84,18 @@ def group_features(features, feature_name, group_condition):
 
         feature_values = [synapse[feature_name] for synapse in features]
         conditions = []
-        for key in grouping_keys:
-            for synapse in features:
-                conditions.append(tuple(
-                    [synapse[key]
-                    for synapse in features
-                    for key in grouping_keys]
-                ))
+        for synapse in features:
+            condition = []
+            for key in grouping_keys:
+                condition.append(synapse[key])
+            conditions.append(tuple(condition))
+
+        #for key in grouping_keys:
+        #    for synapse in features:
+        #        condition = tuple([synapse[key]])
+        #        conditions.append(tuple(
+        #            [synapse[key]]
+        #        ))
         #conditions = [
         #    tuple([synapse[key]
         #    for synapse in features
@@ -103,6 +108,7 @@ def group_features(features, feature_name, group_condition):
             grouped_features[condition] = []
         grouped_features[condition].append(feature_value)
 
+    # print('grouped_features: ', '\n', f'{grouped_features}')
     return grouped_features
 
 def group_features_by_conditions(condition, filter='unique'):
@@ -220,8 +226,8 @@ def group_features_by_conditions(condition, filter='unique'):
     else:
         raise RuntimeError("'filter' should be 'unique', 'same', or 'all'")
 
-    #for c in condition:
-     #   assert c in ['by_nt_types', 'by_annotators']
+    for c in condition:
+        assert c in ['by_nt_types', 'by_annotators']
 
     grouped_features = {
         feature_name: group_features(features, feature_name, condition)
