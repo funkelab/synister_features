@@ -236,24 +236,3 @@ def group_features_by_conditions(condition, filter='unique'):
 
     return grouped_features
 
-if __name__ == "__main__":
-
-    condition = ('by_nt_types',)
-    grouped_features_30 = group_features_by_conditions(condition, filter='unique')
-    new_d = {}
-    # convert all the keys to str (temp)
-    # new_d = {str(key):values for key, values in grouped_features_30.items()}
-
-    for feature_name,feature_values_by_conditions in grouped_features_30.items():
-
-        values = {}
-
-        for feature_condition, feature_values in feature_values_by_conditions.items():
-
-            values[str(feature_condition)] = feature_values
-
-        new_d[feature_name] = values
-
-    with open(f'grouped_features_30.json', 'w') as f:
-        json.dump(new_d, f, indent=2)
-
