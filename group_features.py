@@ -209,20 +209,20 @@ def group_features_by_conditions(condition, filter='unique'):
     # filter based on duplicate numbers
 
     if filter == 'unique':
-        filtered_features = [
+        features = [
             f
             for f in features
             if f['duplicate_number'] == 1
         ]
     elif filter == 'same':
         duplicate_synapse_ids = get_duplicate_synapse_ids(features)
-        filtered_features = [
+        features = [
             f
             for f in features
             if f['synapse_id'] in duplicate_synapse_ids
         ]
     elif filter == 'all':
-        filtered_features = features
+        pass
     else:
         raise RuntimeError("'filter' should be 'unique', 'same', or 'all'")
 
