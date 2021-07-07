@@ -2,9 +2,9 @@ import numpy as np
 import skimage.measure
 import zarr
 
-dataset = '20210630'
+dataset = '20210706'
 original_dataset = '../data/source_data'
-annotators = ['c0', 'c1', 'c2']
+assignments = ['c0', 'c1', 'c2', 'c3']
 max_num_chunks = 20
 layer_names = ['vesicles', 'cleft', 'cleft_membrane', 'cytosol', 'posts', 't-bars']
 
@@ -158,7 +158,7 @@ def has_unique_connected_components(layer):
         if unique_cc_labels.size != 2:
 
             print(f"Found {unique_cc_labels.size - 1} connected components "
-                  "with the same ID!")
+                  f"with the same ID {label}!")
             return False
 
     return True
@@ -191,11 +191,15 @@ if __name__ == "__main__":
 
     zarr_file = zarr.open(f'../data/{dataset}.zarr', 'r')
 
-    for annotator in annotators:
+    for assignment in assignments:
+
+        # already checked
+        if assignment in ['c0', 'c1', 'c2']:
+            continue
 
         for chunk in range(max_num_chunks):
 
-            chunk_group = f'synapses_{annotator}_{chunk}'
+            chunk_group = f'synapses_{assignment}_{chunk}'
 
             if chunk_group not in zarr_file:
                 continue
