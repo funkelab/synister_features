@@ -6,10 +6,17 @@ import math
 import sys
 import random
 
-dataset = '20210630'
+dataset = '20210706'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
-annotators = ['c0', 'c1', 'c2']
+assignments = ['c0', 'c1', 'c2', 'c3']
+annotators = ['a0', 'a1', 'a2']
+assignment_to_annotator = {
+    'c0': 'a0',
+    'c1': 'a1',
+    'c2': 'a2',
+    'c3': 'a2',
+}
 max_num_chunks = 20
 
 file_to_ids = None
@@ -53,13 +60,13 @@ def process_synapse(zarr_file, synapse_group, synapse):
     # split synapse_group by /
     #   chunk_name / synapse
     # split chunk_name by _
-    #   synapses _ annotator _ chunk_number
+    #   synapses _ assignment _ chunk_number
 
     chunk_name, _ = synapse_group.split('/')
-    _, annotator, chunk_number = chunk_name.split('_')
+    _, assignment, chunk_number = chunk_name.split('_')
     chunk_number = int(chunk_number)
 
-    synapse_id = get_synapse_id(annotator, chunk_number, synapse)
+    synapse_id = get_synapse_id(assignment, chunk_number, synapse)
     neurotransmitter = get_neurotransmitter(synapse_id)
     mean_intensities = agglomerate_intensities(
         zarr_file,
@@ -74,7 +81,8 @@ def process_synapse(zarr_file, synapse_group, synapse):
     # feature_values.append((val-minimum)/(maximum-minimum))
 
     synapse_features = {
-        'annotator': annotator,
+        'assignment': assignment,
+        'annotator': assignment_to_annotator[assignment],
         'chunk_number': chunk_number,
         'synapse_number': synapse,
         'synapse_id': synapse_id,
@@ -110,7 +118,7 @@ def process_synapse(zarr_file, synapse_group, synapse):
 
     return synapse_features
 
-def get_synapse_id(annotator, chunk_number, synapse_number):
+def get_synapse_id(assignment, chunk_number, synapse_number):
 
     global file_to_ids
 
@@ -118,7 +126,7 @@ def get_synapse_id(annotator, chunk_number, synapse_number):
         with open(file_to_ids_json, 'r') as f:
             file_to_ids = json.load(f)
 
-    tag = f'{annotator}_{chunk_number}'
+    tag = f'{assignment}_{chunk_number}'
     return file_to_ids[tag][synapse_number]
 
 def get_neurotransmitter(synapse_id):
@@ -275,7 +283,8 @@ if __name__ == "__main__":
     # list of dictionaries, one for each synapse, like:
     #
     #   {
-    #       'annotator': 'c0',
+    #       'annotator': 'a0',
+    #       'assignment': 'c0',
     #       'chunk_number': 1,
     #       'synapse_number': 2,  # the number of the syn in the chunk
     #       'synapse_id': '38472171743',  # original CATMAID ID
@@ -288,11 +297,11 @@ if __name__ == "__main__":
 
     synapse_features = []
 
-    for annotator in annotators:
+    for assignment in assignments:
 
         for chunk in range(max_num_chunks):
 
-            chunk_group = f'synapses_{annotator}_{chunk}'
+            chunk_group = f'synapses_{assignment}_{chunk}'
 
             if chunk_group not in zarr_file:
                 continue
