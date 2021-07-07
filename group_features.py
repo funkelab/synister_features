@@ -2,7 +2,7 @@ import numpy as np
 import json
 import copy
 
-dataset = '20210630'
+dataset = '20210706'
 
 
 def filter_synapses(features, feature_name):
