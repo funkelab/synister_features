@@ -2,9 +2,9 @@ import numpy as np
 import skimage.measure
 import zarr
 
-dataset = '20210706'
+dataset = '20210722'
 original_dataset = '../data/source_data'
-assignments = ['c0', 'c1', 'c2', 'c3']
+assignments = ['c0', 'c1', 'c2', 'c3', 'c4']
 max_num_chunks = 20
 layer_names = ['vesicles', 'cleft', 'cleft_membrane', 'cytosol', 'posts', 't-bars']
 
