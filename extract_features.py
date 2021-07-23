@@ -6,16 +6,17 @@ import math
 import sys
 import random
 
-dataset = '20210706'
+dataset = '20210722'
 file_to_ids_json = "../data/source_data/file_to_ids.json"
 ids_to_nt_json = "../data/source_data/ids_to_nt.json"
-assignments = ['c0', 'c1', 'c2', 'c3']
+assignments = ['c0', 'c1', 'c2', 'c3', 'c4']
 annotators = ['a0', 'a1', 'a2']
 assignment_to_annotator = {
     'c0': 'a0',
     'c1': 'a1',
     'c2': 'a2',
     'c3': 'a2',
+    'c4': 'a2',
 }
 max_num_chunks = 20
 
